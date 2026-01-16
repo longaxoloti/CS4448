@@ -37,81 +37,17 @@ public class Dispatcher {
         }
     }
 
-    public void run_no_thread(){
-        while(true){
-            admitArrivals();
-            // if no process is running, pick one
-            if (running == null){
-                running = scheduler.nextProcess(currentTime);
-                if (running != null){
-                    running.setState(State.RUNNING);
-                    running.setStartTime(currentTime);
-                    System.out.printf("Current time = %d: DISPATCH %s\n", currentTime, running);
-                    // if RR, set rrRemaining
-                    if (scheduler instanceof RoundRobinScheduler){
-                        rrRemaining = ((RoundRobinScheduler) scheduler).getQuota();
-                    }
-                }
-            }
-
-            // Execute one tick
-            if (running != null) {
-                running.decRemaining();
-                currentTime++;
-                // allow scheduler to update internal state if needed
-                scheduler.onTick(currentTime);
-                admitArrivals();
-
-                // check termination
-                if (running.getRemainingTime() == 0){
-                    running.setState(State.TERMINATED);
-                    running.setCompletionTime(currentTime);
-                    System.out.printf("Current time = %d: TERMINATED %s (turn around = %d, waiting = %d\n",
-                            currentTime, running, running.getTurnaroundTime(), running.getWaitingTime());
-                    running = null;
-                }
-                else{
-                    // Check quota expiration
-                    if (scheduler instanceof RoundRobinScheduler){
-                        rrRemaining--;
-                        if (rrRemaining <= 0){
-                            running.setState(State.READY);
-                            ((RoundRobinScheduler) scheduler).addProcess(running);
-                            System.out.printf("Current time = %d: RR quota expired -> preempt %s\n", currentTime, running);
-                            running = null;
-                        }
-                    }
-                    // Check preemption
-                    else if (scheduler.isPreemptive() && scheduler instanceof PriorityScheduler){
-                        PriorityScheduler ps = (PriorityScheduler) scheduler;
-                        PCB best = ps.peek();
-                        if (best != null) {
-                            int cmp = Integer.compare(best.getPriority(), running.getPriority());
-                            if ((cmp < 0 && ps.isPreemptive()) || (cmp != 0 && ps.isPreemptive())){
-                                //preempt
-                                running.setState(State.READY);
-                                ps.addProcess(running);
-                                System.out.printf("Current time = %d: PREEMPT %s due to %s\n", currentTime, running, best);
-                                running = null;
-                            }
-                        }
-                    }
-                }
-            }
-            else{
-                // idle
-                if (jobQueue.isEmpty() && (scheduler.nextProcess(currentTime) == null)){
-                    // finished (jobQueue and ready are empty)
-                    break;
-                }
-                System.out.printf("Current time = %d: CPU IDLE\n", currentTime);
-                currentTime++;
+    private void sleepIfNeeded(){
+        if (tickSleepMillis > 0){
+            try{
+                Thread.sleep(tickSleepMillis);
+            } catch (InterruptedException e){
+                Thread.currentThread().interrupt();
             }
         }
-        System.out.printf("Simulation finished at t = %d\n", currentTime);
     }
 
-    public void run_multi_thread(){
+    public void run(){
         while(true){
             admitArrivals();
             // if no process is running, pick one
@@ -132,14 +68,9 @@ public class Dispatcher {
             if (running != null) {
                 running.decRemaining();
                 currentTime++;
-                if (tickSleepMillis > 0){
-                    try {
-                        Thread.sleep(tickSleepMillis);
-                    }
-                    catch (InterruptedException e){
-                        Thread.currentThread().interrupt();
-                    }
-                }
+
+                sleepIfNeeded();
+
                 // allow scheduler to update internal state if needed
                 scheduler.onTick(currentTime);
                 admitArrivals();
@@ -188,14 +119,8 @@ public class Dispatcher {
                 }
                 System.out.printf("Current time = %d: CPU IDLE\n", currentTime);
                 currentTime++;
-                if (tickSleepMillis > 0){
-                    try {
-                        Thread.sleep(tickSleepMillis);
-                    }
-                    catch (InterruptedException e){
-                        Thread.currentThread().interrupt();
-                    }
-                }
+
+                sleepIfNeeded();
             }
         }
         System.out.printf("Simulation finished at t = %d\n", currentTime);

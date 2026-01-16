@@ -13,7 +13,7 @@ public class Problem1 {
         System.out.println("=== Round Robin (q = 2) ===");
         Scheduler rr = new RoundRobinScheduler(2);
         Dispatcher d1 = new Dispatcher(jobs, rr);
-        d1.run_no_thread();
+        d1.run();
 
         System.out.println("\n=== Priority Preemptive (smaller = better) ===");
         List<PCB> jobs2 = Arrays.asList(
@@ -24,6 +24,6 @@ public class Problem1 {
         );
         Scheduler pr = new PriorityScheduler(true, true);
         Dispatcher d2 = new Dispatcher(jobs2, pr);
-        d2.run_no_thread();
+        d2.run();
     }
 }

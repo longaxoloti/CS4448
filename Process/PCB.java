@@ -8,7 +8,7 @@ public class PCB {
     private final int arrivalTime;
 
     private List<Instruction> instructions;
-    private int programCounter;
+    private int programCounter = 0;
 
     private State state;
     private Integer startTime = null;
@@ -31,12 +31,18 @@ public class PCB {
     public int getPID(){return pID;}
     public int getPriority(){return priority;}
     public int getMemoryRequired(){return memoryRequired;}
+    public int getArrivalTime(){return arrivalTime;}
+    public State getState(){return state;}
+    public Integer getStartTime(){return startTime;}
+    public Integer getCompletionTime(){return completionTime;}
+    public List<Instruction> getInstructions() { return instructions; }
+
     public int getBurstTime(){
-        return instructions.stream().filter(i -> i.getType() == Instruction.Type.CPU)
-                .mapToInt(Instruction::getInitialDuration)
+        return instructions.stream()
+                .filter(i -> i.getType() == Instruction.Type.CPU)
+                .mapToInt(Instruction::getDuration)
                 .sum();
     }
-    public int getArrivalTime(){return arrivalTime;}
     public int getRemainingTime(){
         int rem = 0;
         for (int i = programCounter; i < instructions.size(); i++){
@@ -47,18 +53,18 @@ public class PCB {
         }
         return rem;
     }
-    public State getState(){return state;}
-    public Integer getStartTime(){return startTime;}
-    public Integer getCompletionTime(){return completionTime;}
+    public int getWaitingTime() {
+        if (completionTime == null) return 0;
+        return 0;
+    }
     public int getTurnaroundTime() {
-        return (completionTime == null) ? -1 : (completionTime - arrivalTime);
+        return (completionTime == null) ? 0 : (completionTime - arrivalTime);
     }
 
     public Instruction getCurrentInstruction(){
         if (isFinished()) return null;
         return instructions.get(programCounter);
     }
-    public List<Instruction> getInstructions() { return instructions; }
 
     // ===== Setter =====
     public void setState(State state){
@@ -72,13 +78,10 @@ public class PCB {
     }
 
     // Other functions
-    public void decRemaining(){
-        if (remainingTime > 0) remainingTime--;
-    }
-    public int getWaitingTime(){
-        if (completionTime == null || startTime == null) return -1;
-        return getTurnaroundTime() - (getBurstTime() - getRemainingTime());
-    }
+//    public int getWaitingTime(){
+//        if (completionTime == null || startTime == null) return -1;
+//        return getTurnaroundTime() - (getBurstTime() - getRemainingTime());
+//    }
     public boolean isFinished() {
         return programCounter >= instructions.size();
     }
@@ -95,9 +98,10 @@ public class PCB {
 
     @Override
     public String toString(){
+        String located = "RAM";
+        if (state == State.READY_SUSPENDED || state == State.BLOCKED_SUSPENDED) located = "DISK";
+        else if (state == State.NEW) located = "-";
         return String.format("PID = %d, [%s] Mem = %d, State = %s, NextOp = %s",
-                pID,
-                (state == State.READY_SUSPENDED || state == State.BLOCKED_SUSPENDED) ? "DISK" : "RAM",
-                memoryRequired, state, getCurrentInstruction());
+                pID, located, memoryRequired, state, getCurrentInstruction());
     }
 }

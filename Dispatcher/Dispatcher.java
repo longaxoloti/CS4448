@@ -213,7 +213,16 @@ public class Dispatcher {
                         PriorityScheduler ps = (PriorityScheduler) scheduler;
                         PCB best = ps.peek();
                         if (best != null) {
-                            int cmp = Integer.compare(best.getPriority(), running.getPriority());
+                            int runningPrio = running.getPriority();
+                            int bestPrio = best.getPriority();
+                            // smaller means higher priority
+                            if (bestPrio < runningPrio) {
+                                running.setState(State.READY);
+                                scheduler.addProcess(running);
+                                System.out.printf("Time %d: [PREEMPT] PID %d (Prio=%d) preempted by PID %d (Prio=%d)\n",
+                                        currentTime, running.getPID(), runningPrio, best.getPID(), bestPrio);
+                                running = null;
+                            }
                         }
                     }
                 }

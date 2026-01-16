@@ -5,5 +5,7 @@ public enum State {
     READY,
     RUNNING,
     BLOCKED,
-    TERMINATED
+    TERMINATED,
+    READY_SUSPENDED,
+    BLOCKED_SUSPENDED
 }

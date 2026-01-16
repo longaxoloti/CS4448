@@ -15,7 +15,7 @@ public class ThreadModule implements Runnable{
         this.algo = algo;
         List<PCB> copy = new ArrayList<>();
         for (PCB p: jobs){
-            copy.add(new PCB(p.getPID(), p.getPriority(), p.getBurstTime(), p.getArrivalTime()));
+            copy.add(new PCB(p.getPID(), p.getPriority(), p.getArrivalTime()));
         }
         this.jobs = copy;
         this.rrQuota = rrQuota;
@@ -30,12 +30,12 @@ public class ThreadModule implements Runnable{
             if ("RR".equalsIgnoreCase(algo)) {
                 Scheduler rr = new RoundRobinScheduler(rrQuota);
                 Dispatcher d = new Dispatcher(jobs, rr, tickSleepMillis);
-                d.run_multi_thread();
+                d.run();
             }
             else {
                 Scheduler pr = new PriorityScheduler(smallerIsHigher, priorityPreemptive);
                 Dispatcher d = new Dispatcher(jobs, pr, tickSleepMillis);
-                d.run_multi_thread();
+                d.run();
             }
         }
         catch (Exception e) {

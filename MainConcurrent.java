@@ -1,57 +1,50 @@
 import java.io.PrintStream;
 import java.util.*;
 import MultiThread.*;
-import Dispatcher.*;
 import Process.*;
 
 public class MainConcurrent {
     public static void main(String[] args) throws Exception {
-        // wrap System.out to shows thread name in each line
         PrintStream orig = System.out;
         System.setOut(new PrefixedPrintStream(orig));
 
-        // Job A1: CPU(5), RAM(100)
-        List<Instruction> insA1 = Arrays.asList(new Instruction(Instruction.Type.CPU, 5));
-
-        // Job A2: CPU(2) -> IO(3) -> CPU(1), RAM(200)
-        List<Instruction> insA2 = Arrays.asList(
+        // Process A
+        PCB pA = new PCB(1, 600, 0);
+        pA.addThread(new TCB(10, pA, 1, Arrays.asList(new Instruction(Instruction.Type.CPU, 5))));
+        pA.addThread(new TCB(11, pA, 2, Arrays.asList(
                 new Instruction(Instruction.Type.CPU, 2),
                 new Instruction(Instruction.Type.IO, 3),
-                new Instruction(Instruction.Type.CPU, 1)
-        );
-
-        // Job A3: CPU(3), RAM(150)
-        List<Instruction> insA3 = Arrays.asList(new Instruction(Instruction.Type.CPU, 3));
-
-        List<PCB> jobA = Arrays.asList(
-                new PCB(1, 2, 100, 0, insA1),
-                new PCB(2, 1, 200, 1, insA2),
-                new PCB(3, 3, 150, 2, insA3)
-        );
-
-        List<PCB> jobB = new ArrayList<>();
-        // Job B1: CPU(4), RAM 300
-        jobB.add(new PCB(11, 1, 300, 0, Arrays.asList(new Instruction(Instruction.Type.CPU, 4))));
-        // Job B2: CPU(2) -> IO(5) -> CPU(2), RAM 400
-        jobB.add(new PCB(12, 2, 400, 2, Arrays.asList(
-                new Instruction(Instruction.Type.CPU, 2),
-                new Instruction(Instruction.Type.IO, 5),
                 new Instruction(Instruction.Type.CPU, 2)
         )));
 
-        // Create modules
-        ThreadModule modRR = new ThreadModule("RR", jobA, 2, 20L, false, true, 500);
-        ThreadModule modPR = new ThreadModule("Prio", jobB, 0, 20L, true, true, 500);
+        // Process B
+        PCB pB = new PCB(2, 200, 1);
+        pB.addThread(new TCB(20, pB, 1, Arrays.asList(new Instruction(Instruction.Type.CPU, 4))));
 
-        Thread tRR = new Thread(modRR, "[RR]");
-        Thread tPR = new Thread(modPR, "[PRIO]");
+        // Process C
+        PCB pC = new PCB(3, 300, 3);
+        pC.addThread(new TCB(30, pC, 3, Arrays.asList(new Instruction(Instruction.Type.CPU, 3))));
 
-        tRR.start();
-        tPR.start();
+        List<PCB> dataset = new ArrayList<>();
+        dataset.add(pA);
+        dataset.add(pB);
+        dataset.add(pC);
 
-        tRR.join();
-        tPR.join();
+        // Module 1: RR, RAM 1000MB
+        ThreadModule modRR = new ThreadModule("RR", dataset, 2, 50L, false, true, 1000);
 
-        System.out.println("Both simulations finished.");
+        // Module 2: Priority, RAM 700MB
+        ThreadModule modPrio = new ThreadModule("PRIO", dataset, 0, 50L, true, true, 700);
+
+        Thread t1 = new Thread(modRR, "[RR-SYS]");
+        Thread t2 = new Thread(modPrio, "[PRIO-SYS]");
+
+        t1.start();
+        t2.start();
+
+        t1.join();
+        t2.join();
+
+        System.out.println("All simulations finished.");
     }
 }

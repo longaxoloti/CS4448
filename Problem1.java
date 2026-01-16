@@ -1,39 +1,37 @@
 import Dispatcher.*;
 import Process.*;
-
 import java.util.*;
+
 public class Problem1 {
-    public static void main(String[] args){
+    public static void main(String[] args) {
+        System.out.println("=== SINGLE THREAD OS SIMULATION (Threads + Memory + IO) ===");
 
-        System.out.println("=== Round Robin (Time Quantum = 2, RAM = 500MB) ===");
-
-        List<Instruction> ins1 = Arrays.asList(new Instruction(Instruction.Type.CPU, 4));
-        List<Instruction> ins2 = Arrays.asList(
-                new Instruction(Instruction.Type.CPU, 2),
+        // === Process 1 (400MB) ===
+        PCB p1 = new PCB(1, 400, 0);
+        // Thread 1.1: Render UI
+        List<Instruction> t1Ins = Arrays.asList(new Instruction(Instruction.Type.CPU, 4));
+        p1.addThread(new TCB(101, p1, 2, t1Ins));
+        // Thread 1.2: Download File (IO heavy)
+        List<Instruction> t2Ins = Arrays.asList(
+                new Instruction(Instruction.Type.CPU, 1),
                 new Instruction(Instruction.Type.IO, 5),
-                new Instruction(Instruction.Type.CPU, 2)
+                new Instruction(Instruction.Type.CPU, 1)
         );
-        List<Instruction> ins3 = Arrays.asList(new Instruction(Instruction.Type.CPU, 5));
+        p1.addThread(new TCB(102, p1, 1, t2Ins));
 
-        List<PCB> jobs = Arrays.asList(
-                new PCB(1, 2, 100, 0, ins1),
-                new PCB(2, 1, 250, 1, ins2),
-                new PCB(3, 3, 200, 2, ins3)
-        );
-        Scheduler rr = new RoundRobinScheduler(2);
-        Dispatcher d1 = new Dispatcher(jobs, rr, 0, 500);
-        d1.run();
+        // === Process 2 (300MB) ===
+        PCB p2 = new PCB(2, 300, 2);
 
-        System.out.println("\n=== Priority Preemptive (smaller = better, RAM = 1000MB) ===");
+        List<Instruction> t3Ins = Arrays.asList(new Instruction(Instruction.Type.CPU, 6));
+        p2.addThread(new TCB(201, p2, 1, t3Ins));
 
-        List<Instruction> ins4 = Arrays.asList(new Instruction(Instruction.Type.CPU, 10));
-        List<Instruction> ins5 = Arrays.asList(new Instruction(Instruction.Type.CPU, 3));
-        List<PCB> jobs2 = Arrays.asList(
-                new PCB(4, 2, 100, 0, ins4),
-                new PCB(5, 1, 100, 2, ins5)
-        );
-        Scheduler pr = new PriorityScheduler(true, true);
-        Dispatcher d2 = new Dispatcher(jobs2, pr, 0, 1000);
-        d2.run();
+        List<PCB> jobs = new ArrayList<>();
+        jobs.add(p1);
+        jobs.add(p2);
+
+        // Total 1000MB RAM in Main Memory
+        Scheduler rr = new RoundRobinScheduler(3);
+        Dispatcher dispatcher = new Dispatcher(jobs, rr, 0, 1000);
+        dispatcher.run();
     }
 }

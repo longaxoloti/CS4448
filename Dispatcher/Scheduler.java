@@ -1,10 +1,11 @@
 package Dispatcher;
 
-import Process.PCB;
+import Process.TCB;
 
 public interface Scheduler {
-    void addProcess(PCB p);
+    void addThread(TCB t);
     void onTick(int currentTime);
-    PCB nextProcess(int currentTime);
+    TCB nextThread(int currentTime);
+    TCB peek();
     boolean isPreemptive();
 }

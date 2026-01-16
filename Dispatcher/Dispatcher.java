@@ -3,251 +3,203 @@ import Process.*;
 import java.util.*;
 
 public class Dispatcher {
-    private final List<PCB> allJobs;
+    private final List<PCB> allProcesses;
     private final Scheduler scheduler;
-
-    private final List<PCB> blockedQueue = new ArrayList<>();
-    private final List<PCB> suspendQueue = new ArrayList<>();
-
-    private int currentTime = 0;
-    private PCB running = null;
-    private int rrRemaining = 0;
-    private long tickSleepMillis;
-
     private final int totalMemory;
     private int usedMemory = 0;
+    private final long tickSleepMillis;
 
-    public Dispatcher(List<PCB> jobs, Scheduler scheduler){
-        this(jobs, scheduler, 0, 999999);
-    }
+    private TCB runningThread = null;
+    private int currentTime = 0;
+    private int rrRemaining = 0;
 
-    public Dispatcher(List<PCB> jobs, Scheduler scheduler, long tickSleepMillis, int totalMemory){
-        this.allJobs = new ArrayList<>(jobs);
-        this.allJobs.sort(Comparator.comparingInt(PCB::getArrivalTime));
+    private final List<TCB> blockedThreads = new ArrayList<>();
+    private final List<PCB> suspendedProcesses = new ArrayList<>();
+
+    public Dispatcher(List<PCB> processes, Scheduler scheduler, long tickSleepMillis, int totalMemory) {
+        this.allProcesses = new ArrayList<>(processes);
+        this.allProcesses.sort(Comparator.comparingInt(PCB::getArrivalTime));
         this.scheduler = scheduler;
         this.tickSleepMillis = tickSleepMillis;
         this.totalMemory = totalMemory;
     }
 
-    private void admitArrivals(){
-        Iterator<PCB> it = allJobs.iterator();
-        while (it.hasNext()){
+    private void checkArrivals() {
+        Iterator<PCB> it = allProcesses.iterator();
+        while (it.hasNext()) {
             PCB p = it.next();
-            if (p.getArrivalTime() <= currentTime){
-                // Put to RAM
+            if (p.getArrivalTime() <= currentTime) {
                 if (usedMemory + p.getMemoryRequired() <= totalMemory) {
+                    // RAM enough
                     allocateMemory(p);
-                    p.setState(State.READY);
-                    scheduler.addProcess(p);
-                    System.out.printf("Time %d: PID %d -> READY (RAM)\n", currentTime, p.getPID());
-                }
-                else {
+                    p.setInRAM(true);
+                    for (TCB t : p.getThreads()) {
+                        t.setState(State.READY);
+                        scheduler.addThread(t);
+                    }
+                    System.out.printf("Time %d: [NEW PROC] PID %d loaded to RAM. %d threads ready.\n",
+                            currentTime, p.getPID(), p.getThreads().size());
+                } else {
                     // RAM full
-                    p.setState(State.READY_SUSPENDED);
-                    suspendQueue.add(p);
-                    System.out.printf("Time %d: PID %d -> READY/SUSPENDED (RAM)\n", currentTime, p.getPID());
+                    p.setInRAM(false);
+                    suspendedProcesses.add(p);
+                    System.out.printf("Time %d: [NEW PROC] PID %d -> Suspended (Disk) - Not enough RAM.\n", currentTime, p.getPID());
                 }
                 it.remove();
-            }
-            else break;
+            } else break;
         }
     }
 
+    // I/O Handling
     private void processIO() {
-        // BLOCKED
-        Iterator<PCB> it = blockedQueue.iterator();
-        while (it.hasNext()){
-            PCB p = it.next();
-            p.processCurrentInstruction(); // decrease I/O duration
+        Iterator<TCB> it = blockedThreads.iterator();
+        while (it.hasNext()) {
+            TCB t = it.next();
+            t.processCurrentInstruction();
 
-            // If current I/O done, move to the next instr
-            Instruction next = p.getCurrentInstruction();
+            Instruction next = t.getCurrentInstruction();
             if (next == null || next.getType() == Instruction.Type.CPU) {
-                p.setState(State.READY);
-                scheduler.addProcess(p);
-                it.remove();
-                System.out.printf("Time %d: PID %d finished I/O -> READY\n", currentTime, p.getPID());
-            }
-        }
-
-        // BLOCKED/SUSPENDED
-        for (PCB p: suspendQueue) {
-            if (p.getState() == State.BLOCKED_SUSPENDED){
-                p.processCurrentInstruction();
-                Instruction next = p.getCurrentInstruction();
-                if (next == null || next.getType() == Instruction.Type.CPU){
-                    p.setState(State.READY_SUSPENDED);
-                    System.out.printf("Time %d: PID %d finished I/O (Disk) -> READY/SUSPENDED\n", currentTime, p.getPID());
+                t.setState(State.READY);
+                if (t.getParentPCB().isInRAM()) {
+                    scheduler.addThread(t);
+                    System.out.printf("Time %d: [IO-DONE] TID %d (P%d) -> READY\n", currentTime, t.getTID(), t.getParentPCB().getPID());
+                } else {
+                    System.out.printf("Time %d: [IO-DONE] TID %d finished I/O but P%d is Suspended.\n", currentTime, t.getTID(), t.getParentPCB().getPID());
                 }
+                it.remove();
             }
         }
     }
 
+    // Swapper (Memory Manager)
     private void swapper() {
-        // Find READY/SUSPENDED process
-        PCB candidate = null;
-        for (PCB p: suspendQueue) {
-            if (p.getState() == State.READY_SUSPENDED) {
-                candidate = p;
-                break;
-            }
-        }
-
-        if (candidate != null) {
-            // RAM enough
+        // Swap In
+        if (!suspendedProcesses.isEmpty()) {
+            PCB candidate = suspendedProcesses.get(0); // FIFO
             if (usedMemory + candidate.getMemoryRequired() <= totalMemory) {
-                swapIn(candidate);
-            }
-            // RAM full
-            else {
-                PCB victim = findVictimToSwapOut(candidate.getMemoryRequired());
-                if (victim != null) {
-                    swapOut(victim);
-                    // try swap in
-                    if (usedMemory + candidate.getMemoryRequired() <= totalMemory) {
-                        swapIn(candidate);
+                suspendedProcesses.remove(0);
+                allocateMemory(candidate);
+                candidate.setInRAM(true);
+                for (TCB t : candidate.getThreads()) {
+                    // Check state
+                    if (t.getState() != State.TERMINATED) {
+                        t.setState(State.READY);
+                        scheduler.addThread(t);
                     }
                 }
+                System.out.printf("Time %d: [SWAP-IN] PID %d moved from Disk to RAM.\n", currentTime, candidate.getPID());
             }
         }
     }
 
-    private void swapIn(PCB p) {
-        suspendQueue.remove(p);
-        allocateMemory(p);
-        p.setState(State.READY);
-        scheduler.addProcess(p);
-        System.out.printf("Time %d: SWAP IN PID %d\n", currentTime, p.getPID());
-    }
+    private void allocateMemory(PCB p) { usedMemory += p.getMemoryRequired(); }
+    private void freeMemory(PCB p) { usedMemory -= p.getMemoryRequired(); }
 
-    private void swapOut(PCB p) {
-        if (p.getState() == State.BLOCKED) {
-            blockedQueue.remove(p);
-            p.setState(State.BLOCKED_SUSPENDED);
-            freeMemory(p);
-            suspendQueue.add(p);
-            System.out.printf("Time %d: SWAP OUT PID %d (Victim)\n", currentTime, p.getPID());
-        }
-    }
+    // --- MAIN RUN LOOP ---
+    public void run() {
+        TCB lastRunning = null;
 
-    private PCB findVictimToSwapOut(int neededMem) {
-        // find process with 'neededMem' memory in blocked queue
-        for (PCB p: blockedQueue){
-            if (p.getMemoryRequired() >= neededMem) return p;
-        }
-        if (!blockedQueue.isEmpty()) return blockedQueue.get(0);
-        return null;
-    }
-
-    private void allocateMemory(PCB p){usedMemory += p.getMemoryRequired();}
-    private void freeMemory(PCB p){usedMemory -= p.getMemoryRequired();}
-
-    private void sleepIfNeeded(){
-        if (tickSleepMillis > 0){
-            try{
-                Thread.sleep(tickSleepMillis);
-            } catch (InterruptedException e){
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    public void run(){
-        while(true) {
-            admitArrivals();
+        while (true) {
+            checkArrivals();
             processIO();
             swapper();
 
-            // if no process is running, pick one
-            if (running == null) {
-                running = scheduler.nextProcess(currentTime);
-                if (running != null) {
-                    running.setState(State.RUNNING);
-                    running.setStartTime(currentTime);
-                    System.out.printf("Time %d: DISPATCH %s\n", currentTime, running);
+            if (runningThread == null) {
+                runningThread = scheduler.nextThread(currentTime);
+
+                if (runningThread != null) {
+                    // == CONTEXT SWITCH SIMULATION ==
+                    if (lastRunning != null && lastRunning.getParentPCB() != runningThread.getParentPCB()) {
+                        System.out.printf("Time %d: [CTX-SWITCH] Process Switch (P%d -> P%d) - Heavy Overhead.\n",
+                                currentTime, lastRunning.getParentPCB().getPID(), runningThread.getParentPCB().getPID());
+                        currentTime++;
+                    } else if (lastRunning != null && lastRunning != runningThread) {
+                        System.out.printf("Time %d: [CTX-SWITCH] Thread Switch (TID %d -> TID %d) - Light Overhead.\n",
+                                currentTime, lastRunning.getTID(), runningThread.getTID());
+                    }
+
+                    runningThread.setState(State.RUNNING);
                     if (scheduler instanceof RoundRobinScheduler) {
                         rrRemaining = ((RoundRobinScheduler) scheduler).getQuota();
                     }
+                    System.out.printf("Time %d: [DISPATCH] TID %d (P%d) Running.\n", currentTime, runningThread.getTID(), runningThread.getParentPCB().getPID());
                 }
             }
 
-            if (running != null) {
-                Instruction currentOp = running.getCurrentInstruction();
+            // Execution
+            if (runningThread != null) {
+                lastRunning = runningThread;
+                Instruction op = runningThread.getCurrentInstruction();
 
-                // Running CPU instr
-                if (currentOp != null && currentOp.getType() == Instruction.Type.CPU) {
-                    running.processCurrentInstruction();
+                if (op != null && op.getType() == Instruction.Type.CPU) {
+                    runningThread.processCurrentInstruction();
                     currentTime++;
 
-                    scheduler.onTick(currentTime);
+                    // Thread Finished
+                    if (runningThread.isFinished()) {
+                        runningThread.setState(State.TERMINATED);
+                        System.out.printf("Time %d: [TERM] TID %d Finished.\n", currentTime, runningThread.getTID());
 
-                    if (running.isFinished()) {
-                        running.setState(State.TERMINATED);
-                        running.setCompletionTime(currentTime);
-                        freeMemory(running);
-
-                        System.out.printf("Time %d: %s TERMINATED\n", currentTime, running);
-                        running = null;
+                        checkProcessTermination(runningThread.getParentPCB());
+                        runningThread = null;
                     }
-                    // Check I/O instr
-                    else if (running.getCurrentInstruction().getType() == Instruction.Type.IO) {
-                        running.setState(State.BLOCKED);
-                        blockedQueue.add(running);
-
-                        System.out.printf("Time %d: PID %d Request I/O -> BLOCKED\n", currentTime, running.getPID());
-                        running = null;
+                    // I/O Request
+                    else if (runningThread.getCurrentInstruction().getType() == Instruction.Type.IO) {
+                        runningThread.setState(State.BLOCKED);
+                        blockedThreads.add(runningThread);
+                        System.out.printf("Time %d: [IO-REQ] TID %d -> BLOCKED\n", currentTime, runningThread.getTID());
+                        runningThread = null;
                     }
-                    // Check RR Quota
+                    // Round Robin Timeout
                     else if (scheduler instanceof RoundRobinScheduler) {
                         rrRemaining--;
                         if (rrRemaining <= 0) {
-                            running.setState(State.READY);
-                            ((RoundRobinScheduler) scheduler).addProcess(running);
-
-                            System.out.printf("Time %d: RR Quota expired -> PID %d READY\n", currentTime, running.getPID());
-                            running = null;
+                            runningThread.setState(State.READY);
+                            scheduler.addThread(runningThread);
+                            System.out.printf("Time %d: [RR-TIME] TID %d -> READY\n", currentTime, runningThread.getTID());
+                            runningThread = null;
                         }
                     }
-                    // Check priority
+                    // Preemption (Priority)
                     else if (scheduler.isPreemptive() && scheduler instanceof PriorityScheduler) {
-                        PriorityScheduler ps = (PriorityScheduler) scheduler;
-                        PCB best = ps.peek();
-                        if (best != null) {
-                            int runningPrio = running.getPriority();
-                            int bestPrio = best.getPriority();
-                            // smaller means higher priority
-                            if (bestPrio < runningPrio) {
-                                running.setState(State.READY);
-                                scheduler.addProcess(running);
-                                System.out.printf("Time %d: [PREEMPT] PID %d (Prio=%d) preempted by PID %d (Prio=%d)\n",
-                                        currentTime, running.getPID(), runningPrio, best.getPID(), bestPrio);
-                                running = null;
-                            }
+                        TCB best = scheduler.peek();
+                        if (best != null && best.getPriority() < runningThread.getPriority()) {
+                            runningThread.setState(State.READY);
+                            scheduler.addThread(runningThread);
+                            System.out.printf("Time %d: [PREEMPT] TID %d preempted by TID %d\n", currentTime, runningThread.getTID(), best.getTID());
+                            runningThread = null;
                         }
                     }
                 }
-
-                // Running I/O instr
-                else if (currentOp != null && currentOp.getType() == Instruction.Type.IO) {
-                    running.setState(State.BLOCKED);
-                    blockedQueue.add(running);
-                    running = null;
-                }
-            }
-            else {
-                // CPU idle
-                if (allJobs.isEmpty() && running == null && blockedQueue.isEmpty()&& suspendQueue.isEmpty() && schedulerHasNoProcess()) {
+            } else {
+                // CPU IDLE
+                currentTime++;
+                if (allProcesses.isEmpty() && suspendedProcesses.isEmpty() && blockedThreads.isEmpty() && schedulerHasNoThread()) {
                     break;
                 }
-                System.out.printf("Time %d: CPU idle\n", currentTime);
-                currentTime++;
             }
-            sleepIfNeeded();
+
+            if (tickSleepMillis > 0) {
+                try { Thread.sleep(tickSleepMillis); } catch (Exception e) {}
+            }
         }
-        System.out.printf("Simulation finished at t = %d\n", currentTime);
+        System.out.println("Simulation finished at time " + currentTime);
     }
 
-    private boolean schedulerHasNoProcess() {
-        return scheduler.nextProcess(currentTime) == null;
+    private void checkProcessTermination(PCB p) {
+        boolean allDone = true;
+        for (TCB t : p.getThreads()) {
+            if (t.getState() != State.TERMINATED) {
+                allDone = false;
+                break;
+            }
+        }
+        if (allDone) {
+            System.out.printf("Time %d: [PROC-TERM] All threads of PID %d done. Freeing %dMB RAM.\n",
+                    currentTime, p.getPID(), p.getMemoryRequired());
+            freeMemory(p);
+        }
     }
+
+    private boolean schedulerHasNoThread() { return scheduler.nextThread(currentTime) == null; }
 }

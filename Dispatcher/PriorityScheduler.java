@@ -1,36 +1,31 @@
 package Dispatcher;
-import Process.PCB;
+import Process.TCB;
 import java.util.*;
 
-public class PriorityScheduler implements Scheduler{
-    private final PriorityQueue<PCB> pq;
-    private final boolean smallerIsHigher;
-    private final boolean preemptive;
+public class PriorityScheduler implements Scheduler {
+    private final PriorityQueue<TCB> queue;
+    private final boolean isPreemptive;
 
-    public PriorityScheduler(boolean smallerIsHigher, boolean preemptive){
-        this.smallerIsHigher = smallerIsHigher;
-        this.preemptive = preemptive;
-        pq = new PriorityQueue<>((a, b) -> {
-            int cmp = Integer.compare(a.getPriority(), b.getPriority());
+    public PriorityScheduler(boolean smallerIsHigher, boolean isPreemptive) {
+        this.isPreemptive = isPreemptive;
+        this.queue = new PriorityQueue<>((t1, t2) -> {
+            int cmp = Integer.compare(t1.getPriority(), t2.getPriority());
             return smallerIsHigher ? cmp : -cmp;
         });
     }
 
     @Override
-    public void addProcess(PCB p) {
-        pq.add(p);
-    }
+    public void addThread(TCB t) { queue.add(t); }
 
-    public void onTick(int currentTime) {
+    @Override
+    public TCB nextThread(int currentTime) { return queue.poll(); }
 
-    }
+    @Override
+    public TCB peek() { return queue.peek(); }
 
-    public PCB nextProcess(int currentTime) {
-        return pq.poll();
-    }
+    @Override
+    public void onTick(int currentTime) {}
 
-    public boolean isPreemptive() { return preemptive;}
-
-    // peek highest-priority
-    public PCB peek() { return pq.peek(); }
+    @Override
+    public boolean isPreemptive() { return isPreemptive; }
 }

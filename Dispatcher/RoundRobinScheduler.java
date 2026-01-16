@@ -1,31 +1,33 @@
 package Dispatcher;
-import Process.PCB;
+import Process.TCB;
 import java.util.*;
 
-public class RoundRobinScheduler implements Scheduler{
-    private final Deque<PCB> q = new ArrayDeque<>();
-    private final int quota;
-    private int currentSliceRemaining = 0; //maintained by dispatcher
+public class RoundRobinScheduler implements Scheduler {
+    private final Queue<TCB> queue = new LinkedList<>();
+    private final int timeQuantum;
 
-    public RoundRobinScheduler(int quota){
-        if (quota <= 0) throw new IllegalArgumentException("quota>0");
-        this.quota = quota;
+    public RoundRobinScheduler(int timeQuantum) {
+        this.timeQuantum = timeQuantum;
     }
-
-    public int getQuota(){return quota;}
 
     @Override
-    public void addProcess(PCB p){
-        q.addLast(p);
+    public void addThread(TCB t) {
+        queue.add(t);
     }
 
-    public void onTick(int currentTime){
-
+    @Override
+    public TCB nextThread(int currentTime) {
+        return queue.poll();
     }
 
-    public PCB nextProcess(int currentTime){
-        return q.pollFirst();
-    }
+    @Override
+    public TCB peek() { return queue.peek(); }
 
-    public boolean isPreemptive(){return true;}
+    @Override
+    public void onTick(int currentTime) {}
+
+    @Override
+    public boolean isPreemptive() { return true; } // RR luôn preemptive theo time quantum
+
+    public int getQuota() { return timeQuantum; }
 }

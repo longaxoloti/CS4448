@@ -3,27 +3,34 @@ import java.util.*;
 import Process.*;
 import Dispatcher.*;
 
-public class ThreadModule implements Runnable{
+public class ThreadModule implements Runnable {
     private final String algo;
-    private final List<PCB> jobs;
+    private final List<PCB> jobs; // Bản sao riêng
     private final int rrQuota;
     private final long tickSleepMillis;
     private final boolean priorityPreemptive;
     private final boolean smallerIsHigher;
     private final int totalMemory;
 
-    public ThreadModule(String algo, List<PCB> jobs, int rrQuota, long tickSleepMillis, boolean priorityPreemptive, boolean smallerIsHigher, int totalMemory) {
+    public ThreadModule(String algo, List<PCB> originalJobs, int rrQuota, long tickSleepMillis,
+                        boolean priorityPreemptive, boolean smallerIsHigher, int totalMemory) {
         this.algo = algo;
         this.rrQuota = rrQuota;
         this.tickSleepMillis = tickSleepMillis;
         this.priorityPreemptive = priorityPreemptive;
         this.smallerIsHigher = smallerIsHigher;
         this.totalMemory = totalMemory;
-        List<PCB> copy = new ArrayList<>();
-        for (PCB p: jobs){
-            copy.add(new PCB(p.getPID(), p.getPriority(), p.getMemoryRequired(), p.getArrivalTime(), p.getInstructions()));
+
+        // Deep copy PCB & TCB
+        this.jobs = new ArrayList<>();
+        for (PCB original : originalJobs) {
+            PCB pCopy = new PCB(original.getPID(), original.getMemoryRequired(), original.getArrivalTime());
+            for (TCB tOriginal : original.getThreads()) {
+                TCB tCopy = new TCB(tOriginal, pCopy);
+                pCopy.addThread(tCopy);
+            }
+            this.jobs.add(pCopy);
         }
-        this.jobs = copy;
     }
 
     @Override
@@ -33,16 +40,13 @@ public class ThreadModule implements Runnable{
                 Scheduler rr = new RoundRobinScheduler(rrQuota);
                 Dispatcher d = new Dispatcher(jobs, rr, tickSleepMillis, totalMemory);
                 d.run();
-            }
-            else {
+            } else {
                 Scheduler pr = new PriorityScheduler(smallerIsHigher, priorityPreemptive);
                 Dispatcher d = new Dispatcher(jobs, pr, tickSleepMillis, totalMemory);
                 d.run();
             }
-        }
-        catch (Exception e) {
-            System.out.printf("Exception in module %s: %s\n", algo, e.toString());
-            e.printStackTrace(System.out);
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 }

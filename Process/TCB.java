@@ -4,7 +4,7 @@ import java.util.*;
 public class TCB {
     private final int tID;
     private final PCB parentPCB;
-    private final int priority;
+    private int priority;
 
     private List<Instruction> instructions;
     private int programCounter = 0;
@@ -38,6 +38,7 @@ public class TCB {
     public int getPriority() { return priority; }
     public State getState() { return state; }
     public void setState(State state) { this.state = state; }
+    public void setPriority(int p) { this.priority = p; }
     public List<Instruction> getInstructions() { return instructions; }
 
     // === Other functions ===
@@ -58,6 +59,11 @@ public class TCB {
                 programCounter++;
             }
         }
+    }
+
+    public void increasePriority(int amount) {
+        this.priority -= amount;
+        if (this.priority < 0) this.priority = 0; // Giới hạn không cho âm
     }
 
     @Override

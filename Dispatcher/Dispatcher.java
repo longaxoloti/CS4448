@@ -16,12 +16,34 @@ public class Dispatcher {
     private final List<TCB> blockedThreads = new ArrayList<>();
     private final List<PCB> suspendedProcesses = new ArrayList<>();
 
+    // COLOR
+    private static final String RESET = "\u001B[0m";
+    private static final String[] PROCESS_COLORS = {
+            "\u001B[31m", // Red
+            "\u001B[32m", // Green
+            "\u001B[34m", // Blue
+            "\u001B[35m", // Purple
+            "\u001B[36m", // Cyan
+            "\u001B[93m"  // Bright Yellow
+    };
+
     public Dispatcher(List<PCB> processes, Scheduler scheduler, long tickSleepMillis, int totalMemory) {
         this.allProcesses = new ArrayList<>(processes);
         this.allProcesses.sort(Comparator.comparingInt(PCB::getArrivalTime));
         this.scheduler = scheduler;
         this.tickSleepMillis = tickSleepMillis;
         this.totalMemory = totalMemory;
+    }
+
+    // Log with Color based on PID
+    private void log(PCB p, String format, Object... args) {
+        String color = (p == null) ? RESET : PROCESS_COLORS[p.getPID() % PROCESS_COLORS.length];
+        System.out.print(color);
+        System.out.printf(format, args);
+        System.out.println(RESET);
+    }
+    private void sysLog(String format, Object... args) {
+        System.out.printf(format + "\n", args);
     }
 
     private void checkArrivals() {
@@ -37,13 +59,13 @@ public class Dispatcher {
                         t.setState(State.READY);
                         scheduler.addThread(t);
                     }
-                    System.out.printf("Time %d: [NEW PROC] PID %d loaded to RAM. %d threads ready.\n",
+                    log(p, "Time %d: [NEW PROC] PID %d loaded to RAM. %d threads ready.",
                             currentTime, p.getPID(), p.getThreads().size());
                 } else {
                     // RAM full
                     p.setInRAM(false);
                     suspendedProcesses.add(p);
-                    System.out.printf("Time %d: [NEW PROC] PID %d -> Suspended (Disk) - Not enough RAM.\n", currentTime, p.getPID());
+                    log(p, "Time %d: [NEW PROC] PID %d -> Suspended (Disk) - Not enough RAM.", currentTime, p.getPID());
                 }
                 it.remove();
             } else break;
@@ -62,9 +84,9 @@ public class Dispatcher {
                 t.setState(State.READY);
                 if (t.getParentPCB().isInRAM()) {
                     scheduler.addThread(t);
-                    System.out.printf("Time %d: [IO-DONE] TID %d (P%d) -> READY\n", currentTime, t.getTID(), t.getParentPCB().getPID());
+                    log(t.getParentPCB(), "Time %d: [IO-DONE] TID %d (P%d) -> READY", currentTime, t.getTID(), t.getParentPCB().getPID());
                 } else {
-                    System.out.printf("Time %d: [IO-DONE] TID %d finished I/O but P%d is Suspended.\n", currentTime, t.getTID(), t.getParentPCB().getPID());
+                    log(t.getParentPCB(), "Time %d: [IO-DONE] TID %d finished I/O but P%d is Suspended.", currentTime, t.getTID(), t.getParentPCB().getPID());
                 }
                 it.remove();
             }
@@ -87,7 +109,7 @@ public class Dispatcher {
                         scheduler.addThread(t);
                     }
                 }
-                System.out.printf("Time %d: [SWAP-IN] PID %d moved from Disk to RAM.\n", currentTime, candidate.getPID());
+                log(candidate, "Time %d: [SWAP-IN] PID %d moved from Disk to RAM.", currentTime, candidate.getPID());
             }
         }
     }
@@ -108,13 +130,13 @@ public class Dispatcher {
                 runningThread = scheduler.nextThread(currentTime);
 
                 if (runningThread != null) {
-                    // == CONTEXT SWITCH SIMULATION ==
+                    // == CONTEXT SWITCH ==
                     if (lastRunning != null && lastRunning.getParentPCB() != runningThread.getParentPCB()) {
-                        System.out.printf("Time %d: [CTX-SWITCH] Process Switch (P%d -> P%d) - Heavy Overhead.\n",
+                        sysLog("Time %d: [CTX-SWITCH] Process Switch (P%d -> P%d) - Heavy Overhead.",
                                 currentTime, lastRunning.getParentPCB().getPID(), runningThread.getParentPCB().getPID());
                         currentTime++;
                     } else if (lastRunning != null && lastRunning != runningThread) {
-                        System.out.printf("Time %d: [CTX-SWITCH] Thread Switch (TID %d -> TID %d) - Light Overhead.\n",
+                        sysLog("Time %d: [CTX-SWITCH] Thread Switch (TID %d -> TID %d) - Light Overhead.",
                                 currentTime, lastRunning.getTID(), runningThread.getTID());
                     }
 
@@ -122,7 +144,8 @@ public class Dispatcher {
                     if (scheduler instanceof RoundRobinScheduler) {
                         rrRemaining = ((RoundRobinScheduler) scheduler).getQuota();
                     }
-                    System.out.printf("Time %d: [DISPATCH] TID %d (P%d) Running.\n", currentTime, runningThread.getTID(), runningThread.getParentPCB().getPID());
+                    log(runningThread.getParentPCB(), "Time %d: [DISPATCH] TID %d (P%d) Running.",
+                            currentTime, runningThread.getTID(), runningThread.getParentPCB().getPID());
                 }
             }
 
@@ -138,7 +161,7 @@ public class Dispatcher {
                     // Thread Finished
                     if (runningThread.isFinished()) {
                         runningThread.setState(State.TERMINATED);
-                        System.out.printf("Time %d: [TERM] TID %d Finished.\n", currentTime, runningThread.getTID());
+                        log(runningThread.getParentPCB(), "Time %d: [TERM] TID %d Finished.", currentTime, runningThread.getTID());
 
                         checkProcessTermination(runningThread.getParentPCB());
                         runningThread = null;
@@ -147,7 +170,7 @@ public class Dispatcher {
                     else if (runningThread.getCurrentInstruction().getType() == Instruction.Type.IO) {
                         runningThread.setState(State.BLOCKED);
                         blockedThreads.add(runningThread);
-                        System.out.printf("Time %d: [IO-REQ] TID %d -> BLOCKED\n", currentTime, runningThread.getTID());
+                        log(runningThread.getParentPCB(), "Time %d: [IO-REQ] TID %d -> BLOCKED", currentTime, runningThread.getTID());
                         runningThread = null;
                     }
                     // Round Robin Timeout
@@ -156,7 +179,7 @@ public class Dispatcher {
                         if (rrRemaining <= 0) {
                             runningThread.setState(State.READY);
                             scheduler.addThread(runningThread);
-                            System.out.printf("Time %d: [RR-TIME] TID %d -> READY\n", currentTime, runningThread.getTID());
+                            log(runningThread.getParentPCB(), "Time %d: [RR-TIME] TID %d -> READY", currentTime, runningThread.getTID());
                             runningThread = null;
                         }
                     }
@@ -166,7 +189,8 @@ public class Dispatcher {
                         if (best != null && best.getPriority() < runningThread.getPriority()) {
                             runningThread.setState(State.READY);
                             scheduler.addThread(runningThread);
-                            System.out.printf("Time %d: [PREEMPT] TID %d preempted by TID %d\n", currentTime, runningThread.getTID(), best.getTID());
+                            log(runningThread.getParentPCB(), "Time %d: [PREEMPT] TID %d preempted by TID %d",
+                                    currentTime, runningThread.getTID(), best.getTID());
                             runningThread = null;
                         }
                     }
@@ -178,6 +202,8 @@ public class Dispatcher {
                     break;
                 }
             }
+
+            scheduler.onTick(currentTime);
 
             if (tickSleepMillis > 0) {
                 try { Thread.sleep(tickSleepMillis); } catch (Exception e) {}
@@ -195,7 +221,7 @@ public class Dispatcher {
             }
         }
         if (allDone) {
-            System.out.printf("Time %d: [PROC-TERM] All threads of PID %d done. Freeing %dMB RAM.\n",
+            log(p, "Time %d: [PROC-TERM] All threads of PID %d done. Freeing %dMB RAM.",
                     currentTime, p.getPID(), p.getMemoryRequired());
             freeMemory(p);
         }

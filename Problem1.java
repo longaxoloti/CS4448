@@ -4,7 +4,7 @@ import java.util.*;
 
 public class Problem1 {
     public static void main(String[] args) {
-        System.out.println("=== SINGLE THREAD OS SIMULATION (Threads + Memory + IO) ===");
+        System.out.println("=== OS SIMULATION (Threads + Memory + IO) ===");
 
         // === Process 1 (400MB) ===
         PCB p1 = new PCB(1, 400, 0);

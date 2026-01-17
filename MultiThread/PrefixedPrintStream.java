@@ -6,6 +6,14 @@ import java.util.*;
 public class PrefixedPrintStream extends PrintStream {
     private final PrintStream delegate;
 
+    private static final String RESET = "\u001B[0m";
+    private static final String RED = "\u001B[31m";
+    private static final String GREEN = "\u001B[32m";
+    private static final String YELLOW = "\u001B[33m";
+    private static final String BLUE = "\u001B[34m";
+    private static final String PURPLE = "\u001B[35m";
+    private static final String CYAN = "\u001B[36m";
+
     public PrefixedPrintStream(PrintStream delegate){
         super(new OutputStream(){
             @Override
@@ -20,28 +28,35 @@ public class PrefixedPrintStream extends PrintStream {
         this.delegate = delegate;
     }
 
+    private String getColor(String threadName) {
+        if (threadName.contains("RR")) return CYAN;
+        if (threadName.contains("PRIO")) return YELLOW;
+        return RESET;
+    }
+
     private String prefix() {
         String t = Thread.currentThread().getName();
-        return t == null ? "" : t + " ";
+        String color = getColor(t);
+        return (t == null ? "" : color + t + " ");
     }
 
     @Override
     public synchronized void println(String s) {
-        delegate.println(prefix() + s);
+        delegate.println(prefix() + s + RESET);
     }
 
     public synchronized void println(Object o) {
-        delegate.println(prefix() + String.valueOf(o));
+        delegate.println(prefix() + String.valueOf(o) + RESET);
     }
 
     public synchronized void print(String s){
-        delegate.print(prefix() + s);
+        delegate.print(prefix() + s + RESET);
     }
 
     public synchronized PrintStream printf(String format, Object... args) {
         //prefix once, then formatted message
         String msg = String.format(format, args);
-        delegate.println(prefix() + msg);
+        delegate.println(prefix() + msg + RESET);
         return this;
     }
 
@@ -50,7 +65,7 @@ public class PrefixedPrintStream extends PrintStream {
     }
 
     // fallbacks for other print/println overloads
-    public void println(){delegate.println(prefix());}
+    public void println(){delegate.println(prefix() + RESET);}
     public void println(boolean x){println(String.valueOf(x));}
     public void println(char x){println(String.valueOf(x));}
     public void println(int x){println(String.valueOf(x));}
